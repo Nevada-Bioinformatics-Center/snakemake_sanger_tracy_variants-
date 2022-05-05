@@ -21,18 +21,18 @@ Configure the workflow according to your needs via editing the file `config.yaml
 
 The `ref` directory variable must contain preindexed reference genome from Tracy
 
-`tracy index -o hg38.fa.fm9 hg38.fa.gz`
-`samtools faidx hg38.fa.gz`
+    tracy index -o hg38.fa.fm9 hg38.fa.gz
+    samtools faidx hg38.fa.gz
 
 The `input_data` variable must be a directory with all ab1 files for a project.
 
 The `snpeffname` must be the snpEff database name pre-downloaded before running the pipeline.
 
-`snpEff -download Oryza_sativa`
+    snpEff -download Oryza_sativa
 
 You can create a conda environment with all the necessary tools as follows:
 
-`mamba create -c conda-forge -c bioconda -n sanger_tools tracy snpeff samtools bcftools tabix`
+    mamba create -c conda-forge -c bioconda -n sanger_tools tracy snpeff samtools bcftools tabix
 
 
 #### Step 3: Execute workflow
@@ -42,5 +42,6 @@ Test your configuration by performing a dry-run via
     snakemake --use-conda --jobs 1 -prn
 
 if no errors are presented, run the pipeline with the following command
+
     snakemake --use-conda --jobs 1 -pr
 

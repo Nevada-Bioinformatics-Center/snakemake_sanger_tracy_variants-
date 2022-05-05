@@ -6,25 +6,26 @@ inputdirectory=config["input_data"]
 SAMPLES, =glob_wildcards(inputdirectory+"/{sample}.ab1", followlinks=True)
 
 wildcard_constraints:
-    sample = "[A-Za-z0-9\-]+"
+    #sample = "[A-Za-z0-9\-]+"
+    sample = "[A-Za-z0-9\-\_]+"
 
 ##### target rules #####
 rule all:
     input: 
        expand("variants/{sample}.fasta", sample=SAMPLES),
        expand("variants/{sample}.bcf", sample=SAMPLES),
-       #expand("variants/{sample}.vcf.gz.tbi", sample=SAMPLES),
-       expand("variants/{sample}.snpEff.vcf", sample=SAMPLES),
-       expand("variants/{sample}.snpEff.html", sample=SAMPLES),
+       expand("variants/{sample}/{sample}.snpEff.vcf", sample=SAMPLES),
+       expand("variants/{sample}/{sample}.snpEff.html", sample=SAMPLES),
        expand("variants/{sample}.snpEff.vcf.gz.tbi", sample=SAMPLES),
-       expand("variants/{sample}.highQ.snpEff.vcf", sample=SAMPLES),
-       expand("variants/{sample}.highQ.snpEff.html", sample=SAMPLES),
+       expand("variants/{sample}_highq/{sample}.highQ.snpEff.vcf", sample=SAMPLES),
+       expand("variants/{sample}_highq/{sample}.highQ.snpEff.html", sample=SAMPLES),
+       expand("variants/{sample}.highQ.snpEff.vcf.gz", sample=SAMPLES),
        expand("variants/{sample}.highQ.snpEff.vcf.gz.tbi", sample=SAMPLES),
-       "variants/all.vcf",
        "variants/all.snpEff.vcf.gz",
        "variants/all.snpEff.vcf.gz.tbi",
        "variants/all.highQ.snpEff.vcf.gz",
        "variants/all.highQ.snpEff.vcf.gz.tbi",
+       #"variants/all.vcf",
 
 
 
@@ -47,7 +48,8 @@ rule tracy_call_varaints:
 
 rule tracy_fasta:
     input:
-       samplefile=f"{config['input_data']}/{{sample}}.ab1"
+       samplefile=f"{config['input_data']}/{{sample}}.ab1",
+       bcf="variants/{sample}.bcf",
     output:
         "variants/{sample}.fasta"
     log:
@@ -86,7 +88,7 @@ rule vcf_add_samplename:
         rm {input}
         """
 
-rule bgzip_files:
+rule bgzip_files_persample:
     input:
         "variants/{sample}.vcf"
     output:
@@ -99,7 +101,7 @@ rule bgzip_files:
     conda:
         "envs/bgzip.yaml"
     shell:
-        "bgzip {input} 2> {log}"
+        "bgzip {input} -c > {output} 2> {log}"
 
 rule index_files:
     input:
@@ -117,38 +119,68 @@ rule snpeff_annotate_persample:
     input:
         "variants/{sample}.vcf.gz"
     output:
-        vcf="variants/{sample}.snpEff.vcf",
-        html="variants/{sample}.snpEff.html",
-        txt="variants/{sample}.snpEff.txt",
+        vcf="variants/{sample}/{sample}.snpEff.vcf",
+        html="variants/{sample}/{sample}.snpEff.html",
+        txt="variants/{sample}/{sample}.snpEff.txt",
     params:
-        dbname=config["snpeffname"]
+        dbname=config["snpeffname"],
+        outdir="variants/{sample}/",
+        samplename="{sample}.snpEff",
     log:
         "logs/snpeff/{sample}.log"
     conda:
         "envs/snpeff.yaml"
     shell:
-        #snpEff Oryza_sativa {input} | bcftools view -Oz > {output} 2> {log}
         """
-        snpEff {params.dbname} {input} > {output.vcf} 2> {log} && mv snpEff_genes.txt {output.txt} && mv snpEff_summary.html {output.html}
+        (mkdir -p {params.outdir} && cd {params.outdir} && snpEff {params.dbname} ../../{input} > ../../{output.vcf} && mv snpEff_genes.txt {params.samplename}.txt && mv snpEff_summary.html {params.samplename}.html) 2> {log} 
         """
+
+rule bgzip_files_snpeff_persample:
+    input:
+        "variants/{sample}/{sample}.snpEff.vcf",
+    output:
+        "variants/{sample}.snpEff.vcf.gz",
+    log:
+        "logs/bgzip/{sample}_snpeff.log"
+    params:
+        extra="", # optional
+    threads: 1
+    conda:
+        "envs/bgzip.yaml"
+    shell:
+        "bgzip {input} -c > {output} 2> {log}"
+
+rule index_files_snpeff_persample:
+    input:
+        "variants/{sample}.snpEff.vcf.gz",
+    output:
+        "variants/{sample}.snpEff.vcf.gz.tbi",
+    params:
+        "-p vcf"
+    log:
+        "logs/tabix/{sample}_snpeff.log"
+    wrapper:
+        "v1.3.2/bio/tabix"
 
 rule snpeff_annotate_all:
     input:
         "variants/all.vcf"
     output:
-        vcf="variants/all.snpEff.vcf",
-        html="variants/all.snpEff.html",
-        txt="variants/all.snpEff.txt",
+        vcf="variants/all/all.snpEff.vcf",
+        html="variants/all/all.snpEff.html",
+        txt="variants/all/all.snpEff.txt",
     params:
-        #cf=config["snpeffconfig"],
-        dbname=config["snpeffname"]
+        dbname=config["snpeffname"],
+        outdir="variants/all/",
+        samplename="all.snpEff",
     log:
         "logs/snpeff/all.log"
     conda:
         "envs/snpeff.yaml"
     shell:
+        #snpEff Oryza_sativa {input} | bcftools view -Oz > {output} 2> {log}
         """
-        snpEff {params.dbname} {input} > {output.vcf} 2> {log} && mv snpEff_genes.txt {output.txt} && mv snpEff_summary.html {output.html}
+        (mkdir -p {params.outdir} && cd {params.outdir} && snpEff {params.dbname} ../../{input} > ../../{output.vcf} && mv snpEff_genes.txt {params.samplename}.txt && mv snpEff_summary.html {params.samplename}.html) 2> {log} 
         """
 
 rule highq_vcf_persample:
@@ -179,19 +211,48 @@ rule snpeff_annotate_persample_highq:
     input:
         "variants/{sample}.highQ.vcf.gz"
     output:
-        vcf="variants/{sample}.highQ.snpEff.vcf",
-        html="variants/{sample}.highQ.snpEff.html",
-        txt="variants/{sample}.highQ.snpEff.txt",
+        vcf="variants/{sample}_highq/{sample}.highQ.snpEff.vcf",
+        html="variants/{sample}_highq/{sample}.highQ.snpEff.html",
+        txt="variants/{sample}_highq/{sample}.highQ.snpEff.txt",
     params:
-        dbname=config["snpeffname"]
+        dbname=config["snpeffname"],
+        outdir="variants/{sample}_highq/",
+        samplename="{sample}.highQ.snpEff",
     log:
         "logs/snpeff/{sample}_highq.log"
     conda:
         "envs/snpeff.yaml"
     shell:
         """
-        snpEff {params.dbname} {input} > {output.vcf} 2> {log} && mv snpEff_genes.txt {output.txt} && mv snpEff_summary.html {output.html}
+        (mkdir -p {params.outdir} && cd {params.outdir} && snpEff {params.dbname} ../../{input} > ../../{output.vcf} && mv snpEff_genes.txt {params.samplename}.txt && mv snpEff_summary.html {params.samplename}.html) 2> {log} 
         """
+
+rule bgzip_files_highq_snpeff_persample:
+    input:
+        "variants/{sample}_highq/{sample}.highQ.snpEff.vcf",
+    output:
+        "variants/{sample}.highQ.snpEff.vcf.gz",
+    log:
+        "logs/bgzip/{sample}_highQ_snpeff.log"
+    params:
+        extra="", # optional
+    threads: 1
+    conda:
+        "envs/bgzip.yaml"
+    shell:
+        "bgzip {input} -c > {output} 2> {log}"
+
+rule index_files_highq_snpeff_persample:
+    input:
+        "variants/{sample}.highQ.snpEff.vcf.gz",
+    output:
+        "variants/{sample}.highQ.snpEff.vcf.gz.tbi",
+    params:
+        "-p vcf"
+    log:
+        "logs/tabix/{sample}_snpeff_highq.log"
+    wrapper:
+        "v1.3.2/bio/tabix"
 
 rule merge_vcf:
     input:
@@ -219,24 +280,26 @@ rule snpeff_annotate_all_highq:
     input:
         "variants/all.highQ.vcf"
     output:
-        vcf="variants/all.highQ.snpEff.vcf",
-        html="variants/all.highQ.snpEff.html",
-        txt="variants/all.highQ.snpEff.txt",
+        vcf="variants/all_highq/all.highQ.snpEff.vcf",
+        html="variants/all_highq/all.highQ.snpEff.html",
+        txt="variants/all_highq/all.highQ.snpEff.txt",
     params:
         dbname=config["snpeffname"],
+        outdir="variants/all_highq/",
+        samplename="all.highQ.snpEff",
     log:
-        "logs/snpeff/all_highq.log",
+        "logs/snpeff/all_highq.log"
     conda:
         "envs/snpeff.yaml"
     shell:
         """
-        snpEff {params.dbname} {input} > {output.vcf} 2> {log} && mv snpEff_genes.txt {output.txt} && mv snpEff_summary.html {output.html}
+        (mkdir -p {params.outdir} && cd {params.outdir} && snpEff {params.dbname} ../../{input} > ../../{output.vcf} && mv snpEff_genes.txt {params.samplename}.txt && mv snpEff_summary.html {params.samplename}.html) 2> {log} 
         """
 
 
 rule bgzip_files_all:
     input:
-        "variants/all.snpEff.vcf"
+        "variants/all/all.snpEff.vcf"
     output:
         "variants/all.snpEff.vcf.gz"
     log:
@@ -247,7 +310,7 @@ rule bgzip_files_all:
     conda:
         "envs/bgzip.yaml"
     shell:
-        "bgzip {input} 2> {log}"
+        "bgzip {input} -c > {output} 2> {log}"
 
 rule index_files_all:
     input:
@@ -261,36 +324,10 @@ rule index_files_all:
     wrapper:
         "v1.3.2/bio/tabix"
 
-#rule bgzip_files_all_highq:
-#    input:
-#        "variants/all.snpEff.highQ.vcf"
-#    output:
-#        "variants/all.snpEff.highQ.vcf.gz"
-#    log:
-#        "logs/bgzip/all_snpeff_highq.log"
-#    params:
-#        extra="", # optional
-#    threads: 1
-#    conda:
-#        "envs/bgzip.yaml"
-#    shell:
-#        "bgzip {input} 2> {log}"
-
-#rule index_files_all_highq:
-#    input:
-#        "variants/all.snpEff.highQ.vcf.gz"
-#    output:
-#        "variants/all.snpEff.highQ.vcf.gz.tbi"
-#    params:
-#        "-p vcf"
-#    log:
-#        "logs/tabix/all_snpeff_highq.log"
-#    wrapper:
-#        "v1.3.2/bio/tabix"
 
 rule bgzip_files_all_highq:
     input:
-        "variants/all.highQ.snpEff.vcf"
+        "variants/all_highq/all.highQ.snpEff.vcf"
     output:
         "variants/all.highQ.snpEff.vcf.gz"
     log:
@@ -301,7 +338,7 @@ rule bgzip_files_all_highq:
     conda:
         "envs/bgzip.yaml"
     shell:
-        "bgzip {input} 2> {log}"
+        "bgzip {input} -c > {output} 2> {log}"
 
 
 rule index_files_all_highq:

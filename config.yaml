@@ -1,4 +1,4 @@
 #path to basespace files
-input_data: "/data/gpfs/assoc/inbre/projects/anne_villacastin/raw_data"
+input_data: "/data/gpfs/assoc/inbre/projects/anne_villacastin/t1_input"
 ref: "ref/chr1_chr5.fasta.gz"
 snpeffname: "Oryza_sativa"
